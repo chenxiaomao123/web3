@@ -1,0 +1,113 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+contract WordGuessGame {
+    address public immutable owner;
+    uint8 private currentWordIndex;
+    uint public totalGuessCount;
+    mapping(address => uint) public playerGuessCount;
+    bool public gameActive = true;
+
+    string[] private wordList = [
+        "apple", "banana", "cat", "dog", "fish",
+        "bird", "tree", "book", "pen", "sun"
+    ];
+
+    string[] private meaningList = [
+        "a red round fruit",
+        "a long yellow fruit",
+        "a small furry animal",
+        "a loyal pet animal",
+        "a water animal with fins",
+        "a flying animal with wings",
+        "a tall plant with leaves",
+        "a thing for reading",
+        "a thing for writing",
+        "the star in the sky"
+    ];
+
+    string private constant TIP_INIT = "Guess index(0-9) for the current meaning!";
+    string private constant TIP_CORRECT = "Correct! New word loaded.";
+    string private constant TIP_WRONG = "Wrong! Try again.";
+    string private constant TIP_INACTIVE = "Game paused! Contact owner.";
+    string private constant TIP_INVALID_INDEX = "Invalid: 0-9 only";
+    string public tipText;
+    string public currentMeaning;
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner");
+        _;
+    }
+
+    modifier gameIsActive() {
+        require(gameActive, TIP_INACTIVE);
+        _;
+    }
+
+    constructor() {
+        owner = msg.sender;
+        _randomWordIndex();
+        tipText = TIP_INIT;
+    }
+
+    function _randomWordIndex() internal {
+        uint random = uint(keccak256(abi.encodePacked(blockhash(block.number - 1), block.timestamp, block.prevrandao))) % 10;
+        currentWordIndex = uint8(random);
+        currentMeaning = meaningList[currentWordIndex];
+    }
+
+    function guessIndex(uint8 _index) external gameIsActive {
+        require(_index >= 0 && _index <= 9, TIP_INVALID_INDEX);
+        totalGuessCount++;
+        playerGuessCount[msg.sender]++;
+
+        if (_index == currentWordIndex) {
+            tipText = TIP_CORRECT;
+            _randomWordIndex();
+        } else {
+            tipText = TIP_WRONG;
+        }
+    }
+
+    function toggleGameActive() external onlyOwner {
+        gameActive = !gameActive;
+        tipText = gameActive ? TIP_INIT : TIP_INACTIVE;
+    }
+
+    function resetGlobalGame() external onlyOwner {
+        _randomWordIndex();
+        totalGuessCount = 0;
+        tipText = TIP_INIT;
+    }
+
+    function resetSinglePlayer(address _player) external onlyOwner {
+        playerGuessCount[_player] = 0;
+    }
+
+    function batchResetPlayers(address[] calldata _players) external onlyOwner {
+        uint256 len = _players.length;
+        for (uint256 i = 0; i < len; i++) {
+            playerGuessCount[_players[i]] = 0;
+        }
+    }
+
+    function getTopPlayer(address[] calldata _players) external view returns (address topPlayer, uint minGuesses) {
+        minGuesses = type(uint).max;
+        uint256 len = _players.length;
+        for (uint256 i = 0; i < len; i++) {
+            uint count = playerGuessCount[_players[i]];
+            if (count > 0 && count < minGuesses) {
+                minGuesses = count;
+                topPlayer = _players[i];
+            }
+        }
+    }
+
+    function withdrawEth() external onlyOwner {
+        (bool success,) = payable(owner).call{value: address(this).balance}("");
+        require(success, "Withdraw failed");
+    }
+
+    receive() external payable {}
+    fallback() external payable {}
+}
